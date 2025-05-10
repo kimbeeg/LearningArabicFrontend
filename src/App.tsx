@@ -38,11 +38,29 @@ function App() {
     const fetchAssessments = async () => {
       try {
         const response = await fetch('/api/v1/assessments');
-        if (!response.ok) throw new Error('Failed to fetch assessments');
-        const data = await response.json();
-        setAssessments(data);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API Error Response:', errorText);
+          throw new Error(`Failed to fetch assessments: ${response.status} ${response.statusText}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error(`Expected JSON response but got ${contentType}`);
+        }
+
+        const text = await response.text();
+        try {
+          const data = JSON.parse(text);
+          setAssessments(data);
+        } catch (parseError) {
+          console.error('JSON Parse Error:', parseError);
+          console.error('Response Text:', text);
+          throw new Error('Failed to parse response as JSON');
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
+        console.error('Fetch Error:', err);
       } finally {
         setLoading(false);
       }
@@ -62,8 +80,15 @@ function App() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-red-50 text-red-700 p-4 rounded-lg">
-          <p>Error: {error}</p>
+        <div className="bg-red-50 text-red-700 p-4 rounded-lg max-w-lg">
+          <h2 className="font-semibold mb-2">Error Loading Assessments</h2>
+          <p>{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
