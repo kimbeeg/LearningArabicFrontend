@@ -59,12 +59,18 @@ interface UserAnswers {
   };
 }
 
+interface Coordinates {
+  x: number;
+  y: number;
+}
+
 export default function AssessmentPage() {
   const { id } = useParams<{ id: string }>();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
+  const [audioPlaying, setAudioPlaying] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchQuestions = async () => {
@@ -116,6 +122,108 @@ export default function AssessmentPage() {
     }));
   };
 
+  const handleHotspotClick = (questionId: string, coordinates: Coordinates, isMultiple: boolean) => {
+    setUserAnswers(prev => {
+      const currentAreas = prev[questionId]?.hotspotAreas || [];
+      let newAreas: Coordinates[];
+
+      if (isMultiple) {
+        newAreas = [...currentAreas, coordinates];
+      } else {
+        newAreas = [coordinates];
+      }
+
+      return {
+        ...prev,
+        [questionId]: { ...prev[questionId], hotspotAreas: newAreas }
+      };
+    });
+  };
+
+  const playAudio = async (mediaAsset: MediaAsset) => {
+    if (audioPlaying === mediaAsset.media_asset_id.toString()) {
+      setAudioPlaying(null);
+      return;
+    }
+
+    try {
+      const audio = new Audio(mediaAsset.storage_path);
+      audio.onended = () => setAudioPlaying(null);
+      await audio.play();
+      setAudioPlaying(mediaAsset.media_asset_id.toString());
+    } catch (err) {
+      console.error('Failed to play audio:', err);
+    }
+  };
+
+  const renderHotspotQuestion = (question: Question) => {
+    if (!question.hotspot_details?.background_media) return null;
+
+    return (
+      <div className="relative w-full aspect-video rounded-lg overflow-hidden">
+        <img
+          src={question.hotspot_details.background_media.storage_path}
+          alt="Hotspot background"
+          className="w-full h-full object-cover"
+        />
+        <div 
+          className="absolute inset-0"
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            handleHotspotClick(
+              question.question_id, 
+              { x, y },
+              question.hotspot_details?.is_multiple_selections_allowed || false
+            );
+          }}
+        >
+          {userAnswers[question.question_id]?.hotspotAreas?.map((area, index) => (
+            <div
+              key={index}
+              className="absolute w-6 h-6 bg-primary rounded-full -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${area.x}%`, top: `${area.y}%` }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMatchingQuestion = (question: Question) => {
+    if (!question.matching_pairs) return null;
+
+    const matchedPairs = userAnswers[question.question_id]?.matchedPairs || {};
+
+    return (
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          {question.matching_pairs.map(pair => (
+            <div
+              key={pair.pair_id}
+              className="p-4 bg-gray-50 rounded-lg"
+            >
+              <p className="text-lg font-medium">{pair.key_text_ar}</p>
+              <select
+                className="mt-2 w-full p-2 border border-gray-300 rounded-md"
+                value={matchedPairs[pair.pair_id] || ''}
+                onChange={(e) => handleMatchingPair(question.question_id, pair.pair_id, e.target.value)}
+              >
+                <option value="">Select a match</option>
+                {question.matching_pairs.map(valuePair => (
+                  <option key={valuePair.pair_id} value={valuePair.pair_id}>
+                    {valuePair.value_text_ar}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -150,17 +258,25 @@ export default function AssessmentPage() {
                 <h2 className="text-xl font-semibold mb-2">{question.title_ar}</h2>
                 {question.voice_over_media && (
                   <button 
-                    className="flex items-center gap-2 text-primary hover:text-primary-dark transition-colors"
-                    onClick={() => {/* Play audio */}}
+                    className={`flex items-center gap-2 transition-colors ${
+                      audioPlaying === question.voice_over_media.media_asset_id.toString()
+                        ? 'text-primary-dark'
+                        : 'text-primary hover:text-primary-dark'
+                    }`}
+                    onClick={() => playAudio(question.voice_over_media!)}
                   >
                     <Play size={20} />
-                    <span>Play Audio</span>
+                    <span>
+                      {audioPlaying === question.voice_over_media.media_asset_id.toString()
+                        ? 'Playing...'
+                        : 'Play Audio'
+                      }
+                    </span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* Question content based on type */}
             <div className="pl-12">
               {question.question_type_code === 'multipleSelect' && question.options && (
                 <div className="space-y-3">
@@ -201,7 +317,9 @@ export default function AssessmentPage() {
                 </div>
               )}
 
-              {/* Add more question types here */}
+              {question.question_type_code === 'hotspot' && renderHotspotQuestion(question)}
+
+              {question.question_type_code === 'textMatching' && renderMatchingQuestion(question)}
             </div>
           </div>
         ))}
