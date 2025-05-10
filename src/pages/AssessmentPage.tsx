@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Play } from 'lucide-react';
+import { Play, GripHorizontal } from 'lucide-react';
 
 interface Question {
   question_id: string;
@@ -11,6 +11,9 @@ interface Question {
   options?: QuestionOption[];
   hotspot_details?: HotspotQuestionDetails;
   matching_pairs?: MatchingPair[];
+  fill_in_blank_details?: FillInBlankDetails;
+  drag_and_drop_details?: DragAndDropDetails;
+  ranking_details?: RankingDetails;
 }
 
 interface MediaAsset {
@@ -51,11 +54,58 @@ interface MatchingPair {
   value_text_ar: string;
 }
 
+interface FillInBlankDetails {
+  question_id: string;
+  has_content: boolean;
+  blanks: BlankDetail[];
+}
+
+interface BlankDetail {
+  blank_id: string;
+  blank_order: number;
+  possible_answers: PossibleAnswer[];
+}
+
+interface PossibleAnswer {
+  answer_id: string;
+  answer_text_ar: string;
+  is_correct: boolean;
+  match_case: boolean;
+}
+
+interface DragAndDropDetails {
+  question_id: string;
+  background_media_id?: number;
+  background_media?: MediaAsset;
+  items: DragAndDropItem[];
+}
+
+interface DragAndDropItem {
+  item_id: string;
+  item_text_ar: string;
+  position_x: number;
+  position_y: number;
+  item_type: 'draggable' | 'target_zone';
+  correct_order_index?: number;
+  correct_target_item_id?: string;
+}
+
+interface RankingDetails {
+  question_id: string;
+  instruction_image_media_id?: number;
+  instruction_image_media?: MediaAsset;
+  items_to_rank: string[];
+  correct_order?: string[];
+}
+
 interface UserAnswers {
   [questionId: string]: {
     selectedOptions?: string[];
     matchedPairs?: { [keyId: string]: string };
     hotspotAreas?: { x: number; y: number }[];
+    blankAnswers?: { [blankId: string]: string };
+    dragAndDropPositions?: { [itemId: string]: { x: number; y: number } };
+    rankingOrder?: string[];
   };
 }
 
@@ -158,6 +208,42 @@ export default function AssessmentPage() {
     });
   };
 
+  const handleBlankAnswer = (questionId: string, blankId: string, answer: string) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        blankAnswers: {
+          ...(prev[questionId]?.blankAnswers || {}),
+          [blankId]: answer
+        }
+      }
+    }));
+  };
+
+  const handleDragAndDrop = (questionId: string, itemId: string, position: { x: number; y: number }) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        dragAndDropPositions: {
+          ...(prev[questionId]?.dragAndDropPositions || {}),
+          [itemId]: position
+        }
+      }
+    }));
+  };
+
+  const handleRankingOrder = (questionId: string, items: string[]) => {
+    setUserAnswers(prev => ({
+      ...prev,
+      [questionId]: {
+        ...prev[questionId],
+        rankingOrder: items
+      }
+    }));
+  };
+
   const playAudio = async (mediaAsset: MediaAsset) => {
     if (audioPlaying === mediaAsset.media_asset_id.toString()) {
       setAudioPlaying(null);
@@ -235,6 +321,142 @@ export default function AssessmentPage() {
                   </option>
                 ))}
               </select>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderFillInBlankQuestion = (question: Question) => {
+    if (!question.fill_in_blank_details?.blanks) return null;
+
+    return (
+      <div className="space-y-4">
+        {question.fill_in_blank_details.blanks.map((blank) => (
+          <div key={blank.blank_id} className="flex items-center gap-4">
+            <span className="text-gray-600">Blank {blank.blank_order + 1}:</span>
+            <select
+              className="flex-1 p-2 border border-gray-300 rounded-md"
+              value={userAnswers[question.question_id]?.blankAnswers?.[blank.blank_id] || ''}
+              onChange={(e) => handleBlankAnswer(question.question_id, blank.blank_id, e.target.value)}
+            >
+              <option value="">Select an answer</option>
+              {blank.possible_answers.map((answer) => (
+                <option key={answer.answer_id} value={answer.answer_text_ar}>
+                  {answer.answer_text_ar}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderDragAndDropQuestion = (question: Question) => {
+    if (!question.drag_and_drop_details?.items) return null;
+
+    const positions = userAnswers[question.question_id]?.dragAndDropPositions || {};
+
+    return (
+      <div 
+        className="relative w-full aspect-video bg-gray-50 rounded-lg"
+        style={{
+          backgroundImage: question.drag_and_drop_details.background_media 
+            ? `url(${question.drag_and_drop_details.background_media.storage_path})`
+            : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center'
+        }}
+      >
+        {question.drag_and_drop_details.items.map((item) => (
+          <div
+            key={item.item_id}
+            className={`absolute p-3 bg-white rounded-lg shadow-md cursor-move ${
+              item.item_type === 'target_zone' ? 'border-2 border-dashed border-gray-300' : ''
+            }`}
+            style={{
+              left: `${positions[item.item_id]?.x || item.position_x}%`,
+              top: `${positions[item.item_id]?.y || item.position_y}%`,
+              transform: 'translate(-50%, -50%)'
+            }}
+            draggable={item.item_type === 'draggable'}
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', item.item_id);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.currentTarget.classList.add('bg-primary-50');
+            }}
+            onDragLeave={(e) => {
+              e.currentTarget.classList.remove('bg-primary-50');
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const itemId = e.dataTransfer.getData('text/plain');
+              const rect = e.currentTarget.getBoundingClientRect();
+              const x = ((e.clientX - rect.left) / rect.width) * 100;
+              const y = ((e.clientY - rect.top) / rect.height) * 100;
+              handleDragAndDrop(question.question_id, itemId, { x, y });
+            }}
+          >
+            <div className="flex items-center gap-2">
+              {item.item_type === 'draggable' && <GripHorizontal size={16} className="text-gray-400" />}
+              <span>{item.item_text_ar}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderRankingQuestion = (question: Question) => {
+    if (!question.ranking_details?.items_to_rank) return null;
+
+    const currentOrder = userAnswers[question.question_id]?.rankingOrder || question.ranking_details.items_to_rank;
+
+    return (
+      <div className="space-y-4">
+        {question.ranking_details.instruction_image_media && (
+          <img
+            src={question.ranking_details.instruction_image_media.storage_path}
+            alt="Ranking instructions"
+            className="w-full rounded-lg"
+          />
+        )}
+        <div className="space-y-2">
+          {currentOrder.map((item, index) => (
+            <div
+              key={item}
+              className="flex items-center gap-4 p-4 bg-white rounded-lg shadow-sm"
+            >
+              <span className="text-lg font-medium w-8">{index + 1}.</span>
+              <div className="flex-grow">{item}</div>
+              <div className="flex gap-2">
+                <button
+                  disabled={index === 0}
+                  onClick={() => {
+                    const newOrder = [...currentOrder];
+                    [newOrder[index], newOrder[index - 1]] = [newOrder[index - 1], newOrder[index]];
+                    handleRankingOrder(question.question_id, newOrder);
+                  }}
+                  className="p-2 text-gray-500 hover:text-primary disabled:opacity-50"
+                >
+                  ↑
+                </button>
+                <button
+                  disabled={index === currentOrder.length - 1}
+                  onClick={() => {
+                    const newOrder = [...currentOrder];
+                    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+                    handleRankingOrder(question.question_id, newOrder);
+                  }}
+                  className="p-2 text-gray-500 hover:text-primary disabled:opacity-50"
+                >
+                  ↓
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -343,8 +565,10 @@ export default function AssessmentPage() {
               )}
 
               {question.question_type_code === 'hotspot' && renderHotspotQuestion(question)}
-
               {question.question_type_code === 'textMatching' && renderMatchingQuestion(question)}
+              {question.question_type_code === 'fillInBlank' && renderFillInBlankQuestion(question)}
+              {question.question_type_code === 'dragAndDrop' && renderDragAndDropQuestion(question)}
+              {question.question_type_code === 'ranking' && renderRankingQuestion(question)}
             </div>
           </div>
         ))}
