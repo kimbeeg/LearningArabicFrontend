@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: 255 159 28;
+    --color-primary-dark: 230 144 25;
+    --color-secondary: 106 76 219;
+    --color-secondary-dark: 95 68 197;
+  }
+
+  @font-face {
+    font-family: 'Noto Sans Arabic';
+    src: url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;700&display=swap');
+  }
+
+  body {
+    font-family: 'Noto Sans Arabic', sans-serif;
+  }
+}
+
+.text-primary {
+  color: rgb(var(--color-primary));
+}
+
+.bg-primary {
+  background-color: rgb(var(--color-primary));
+}
+
+.bg-primary-dark {
+  background-color: rgb(var(--color-primary-dark));
+}
+
+.text-secondary {
+  color: rgb(var(--color-secondary));
+}
+
+.bg-secondary {
+  background-color: rgb(var(--color-secondary));
+}
+
+.bg-secondary-dark {
+  background-color: rgb(var(--color-secondary-dark));
+}
